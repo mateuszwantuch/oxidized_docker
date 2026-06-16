@@ -1,0 +1,2 @@
+28bfe13f990fc8978b876406831ddddf4b0a24192560bbd2a839e782463a4e5e  oxidized-image.tar.gz
+c99a53f4c940b44bf767298931db99b4e65d6b0f933ff6ca65c7bd6a21bcabdd  nginx-image.tar.gz

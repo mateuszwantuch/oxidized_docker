@@ -14,7 +14,7 @@ A step-by-step runbook for deploying **Oxidized** in a container on an **air-gap
 ## Architecture
 
 ```
-            user ─HTTP(8888)─► [ nginx proxy ]  (Basic Auth)
+            user ─HTTP(80)──► [ nginx proxy ]  (Basic Auth)
                                      │  http://oxidized:8888
                                      ▼
                                [ oxidized ]      (private podman network, no host port)
@@ -344,7 +344,7 @@ Requires=oxidized.service
 Image=docker.io/library/nginx:alpine
 ContainerName=oxidized-proxy
 Network=oxidized.network
-PublishPort=8888:8888
+PublishPort=80:8888
 Volume=%h/oxidized/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro,Z
 Volume=%h/oxidized/nginx/.htpasswd:/etc/nginx/.htpasswd:ro,Z
 
@@ -355,7 +355,19 @@ Restart=always
 WantedBy=default.target
 ```
 
-### 6.6 Launch
+### 6.6 Allow rootless Podman to bind port 80
+Ports below 1024 are privileged; rootless Podman cannot bind them by default. Lower the threshold so the proxy can publish port 80:
+```bash
+echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/99-unprivileged-ports.conf
+sudo sysctl --system
+sysctl net.ipv4.ip_unprivileged_port_start    # must print 80
+```
+
+> **Why port 80?** Oxidized-web issues redirects (e.g. to `/nodes`) without a port, so the browser falls back to the default port 80. If the proxy is published on a non-default port, those post-login redirects break. Publishing on 80 keeps the redirects valid.
+>
+> Alternative: run the proxy container **rootful** (unit file in `/etc/containers/systemd/`, managed with `systemctl` instead of `systemctl --user`), which can bind port 80 without the sysctl change.
+
+### 6.7 Launch
 ```bash
 loginctl enable-linger $USER            # if not already done
 systemctl --user daemon-reload
@@ -363,7 +375,7 @@ systemctl --user start oxidized-proxy.service   # pulls in oxidized.service via 
 systemctl --user status oxidized.service oxidized-proxy.service
 ```
 
-Browse to `http://<offline-host>:8888/` → you now get a username/password prompt, and only the users in `.htpasswd` reach Oxidized.
+Browse to `http://<offline-host>/` (no port) → you now get a username/password prompt, and only the users in `.htpasswd` reach Oxidized.
 
 ---
 
@@ -392,7 +404,7 @@ Browse to `http://<offline-host>:8888/` → you now get a username/password prom
 ~/.config/containers/systemd/
 ├── oxidized.network        # private container network
 ├── oxidized.container      # Oxidized service (no host port)
-└── oxidized-proxy.container# nginx auth proxy (publishes 8888)
+└── oxidized-proxy.container# nginx auth proxy (publishes host port 80)
 ```
 
 # Common gotchas

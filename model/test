@@ -1,0 +1,9 @@
+podman exec oxidized sh -c 'cd /home/oxidized/.config/oxidized; R=""; P=""; for r in *.git; do f=$(git --git-dir=$r ls-tree -r --name-only HEAD 2>/dev/null | grep -E "(^|/)DR-FWR15$" | head -1); if [ -n "$f" ]; then R=$r; P=$f; break; fi; done; if [ -z "$R" ]; then echo "DR-FWR15 not found in any repo"; ls -d *.git; exit 1; fi; echo "repo=$R path=$P"; git --git-dir=$R log --format="%h %ci" -3 -- "$P"; git --git-dir=$R show HEAD:"$P" > /tmp/new.txt && git --git-dir=$R show HEAD~1:"$P" > /tmp/old.txt && ruby -e "
+require \"oxidized\"; require \"/home/oxidized/.config/oxidized/model/fortiosexec.rb\"
+m = FortiOSExec.new
+o = m.significant_changes(File.read(\"/tmp/old.txt\"))
+n = m.significant_changes(File.read(\"/tmp/new.txt\"))
+puts(o == n ? \"FILTERED VERSIONS IDENTICAL -> setting is not reaching the node\" : \"FILTERED VERSIONS DIFFER -> lines below force the commit\")
+File.write(\"/tmp/old.f\", o); File.write(\"/tmp/new.f\", n)
+puts \"CR characters in new config: #{File.read(\"/tmp/new.txt\").count(\"\r\")}\"
+"; diff /tmp/old.f /tmp/new.f | head -20; rm -f /tmp/old.txt /tmp/new.txt /tmp/old.f /tmp/new.f'

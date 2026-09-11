@@ -1,0 +1,111 @@
+# fortiosexec: FortiOS model that runs commands over an SSH exec channel.
+# Standalone copy of the stock fortios model with two changes:
+#   1. cfg :ssh { exec true }  -> no PTY, no pager, large configs fetch in seconds
+#   2. cmd :all strips the prompt FortiOS still prints around exec output
+# Also filters the per-run timestamp lines from 'get system status'.
+# Use it by setting model = fortiosexec in router.db. The stock fortios model stays untouched.
+# Telnet still works: on Telnet the model falls back to the interactive path automatically.
+class FortiOSExec < Oxidized::Model
+  using Refinements
+
+  comment "# "
+
+  prompt /^(\(\w\) )?([-\w.~()]+(\s[(\w\-.)]+)?~?\s?[#>$]\s?)$/
+
+  # When a post-login-banner is enabled, you have to press "a" to log in
+  expect /^\(Press\s'a'\sto\saccept\):/ do |data, re|
+    send "a"
+    data.sub re, ""
+  end
+
+  expect /^--More--\s$/ do |data, re|
+    send " "
+    data.sub re, ""
+  end
+
+  cmd :all do |cfg|
+    # Remove junk after --More-- pager
+    cfg = cfg.gsub(/\r +\r/, "")
+    # Remove \r\n after command echo
+    cfg = cfg.gsub("\r\n", "\n")
+    if screenscrape
+      # interactive shell: drop command echo (first line) and prompt (last line)
+      cfg = cfg.cut_both
+    else
+      # exec channel: FortiOS still prints its prompt before the first line and after the last
+      cfg = cfg.sub(/\A[^\n]*?[#$>] /, "")
+      cfg = cfg.sub(/\n[^\n]*[#$>] ?\z/, "\n")
+    end
+    cfg
+  end
+
+  cmd :secret do |cfg|
+    cfg.gsub! /^(\#private-encryption-key=).+/, '\\1 <configuration removed>'
+    cfg.gsub! /(set .+ ENC) .+/, '\\1 <configuration removed>'
+    cfg.gsub! /(set .*secret) .+/, '\\1 <configuration removed>'
+    cfg.gsub! /(set (?:passwd|password|key|group-password|auth-password-l1|auth-password-l2|rsso|history0|history1)) .+/, '\\1 <configuration removed>'
+    cfg.gsub! /(set md5-key [0-9]+) .+/, '\\1 <configuration removed>'
+    cfg.gsub! /(set private-key ).*?-+END (ENCRYPTED|RSA|OPENSSH) PRIVATE KEY-+\n?"$/m, '\\1<configuration removed>'
+    cfg.gsub! /(set privatekey ).*?-+END (ENCRYPTED|RSA|OPENSSH) PRIVATE KEY-+\n?"$/m, '\\1<configuration removed>'
+    cfg.gsub! /(set ca )"-+BEGIN.*?-+END CERTIFICATE-+"$/m, '\\1<configuration removed>'
+    cfg.gsub! /(set csr ).*?-+END CERTIFICATE REQUEST-+"$/m, '\\1<configuration removed>'
+    cfg
+  end
+
+  cmd "get system status" do |cfg|
+    cfg = cfg.reject_lines [
+      "Current Time",
+      "System time",
+      "Cluster uptime",
+      "Uptime",
+      "Disk Usage",
+      "Release Version Information",
+      "Branch Point",
+      "Daylight Time Saving",
+      "Time Zone",
+      "x86-64 Applications",
+      "File System",
+      "Image Signature"
+    ]
+    comment cfg + "\n"
+  end
+
+  cmd "show" do |cfg|
+    cfg.reject_lines ["#config-version="]
+  end
+
+  cmd :significant_changes do |cfg|
+    cfg = cfg.reject_lines [
+      /^ +set \S+ ENC \S+$/
+    ]
+    cfg.gsub(/set private-key .*?-+END \S+ PRIVATE KEY-+\n?"$/m, "")
+  end
+
+  cfg :telnet do
+    username /^[lL]ogin:/
+    password /^Password:/
+  end
+
+  cfg :ssh do
+    exec true # run each command in an exec channel: no PTY, no pager, much faster
+  end
+
+  cfg :telnet, :ssh do
+    pre_logout "exit"
+  end
+end
+EOF
+
+
+
+
+
+
+
+
+models:
+  fortiosexec:
+    username: test
+    password: test
+    vars:
+      output_store_mode: on_significant

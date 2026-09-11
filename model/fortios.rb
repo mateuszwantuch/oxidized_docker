@@ -94,7 +94,7 @@ end
 
 
 
-
+podman exec oxidized sh -c 'cd /home/oxidized/.config/oxidized && git --git-dir=devices.git log --format=%h -2 -- <node-name> | xargs -n2 sh -c "git --git-dir=devices.git diff \$1 \$0 -- <node-name>"' | grep -E "^[-+][^-+]" | grep -v " ENC "
 
 
 
